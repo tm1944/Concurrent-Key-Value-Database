@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(redis_kv_core
+    src/command_executor.cpp
     src/command_parser.cpp
     src/kv_store.cpp
 )

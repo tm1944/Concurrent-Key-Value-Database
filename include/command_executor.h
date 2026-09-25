@@ -9,7 +9,7 @@ class CommandExecutor {
 public:
     CommandExecutor(KVStore& store);
 
-    std::string executre(const Command& command);
+    std::string execute(const Command& command);
 
 private:
     KVStore& store_;

@@ -1,3 +1,4 @@
+#include "command_executor.h"
 #include "command_parser.h"
 #include "kv_store.h"
 
@@ -61,6 +62,58 @@ void test_remove_missing_key() {
             "DELETE should report false for a missing key");
 }
 
+void test_executor_set_stores_value() {
+    KVStore store;
+    CommandExecutor executor(store);
+    const Command command{Command::Type::SET, {"account", "active"}};
+
+    const auto response = executor.execute(command);
+
+    require(response == "OK", "SET should return OK");
+    require(store.get("account") == std::optional<std::string>{"active"},
+            "SET should store the supplied value");
+}
+
+void test_executor_get_existing_key() {
+    KVStore store;
+    store.set("account", "active");
+    CommandExecutor executor(store);
+    const Command command{Command::Type::GET, {"account"}};
+
+    require(executor.execute(command) == "active",
+            "GET should return the stored value");
+}
+
+void test_executor_get_missing_key() {
+    KVStore store;
+    CommandExecutor executor(store);
+    const Command command{Command::Type::GET, {"missing"}};
+
+    require(executor.execute(command) == "(nil)",
+            "GET should return (nil) for a missing key");
+}
+
+void test_executor_delete_existing_key() {
+    KVStore store;
+    store.set("temporary", "value");
+    CommandExecutor executor(store);
+    const Command command{Command::Type::DELETE, {"temporary"}};
+
+    require(executor.execute(command) == "1",
+            "DELETE should return 1 when it removes a key");
+    require(!store.get("temporary").has_value(),
+            "DELETE should remove the key from the store");
+}
+
+void test_executor_delete_missing_key() {
+    KVStore store;
+    CommandExecutor executor(store);
+    const Command command{Command::Type::DELETE, {"missing"}};
+
+    require(executor.execute(command) == "0",
+            "DELETE should return 0 when the key does not exist");
+}
+
 void test_parse_valid_commands() {
     CommandParser parser;
 
@@ -111,6 +164,11 @@ int main() {
         {"missing key", test_missing_key_returns_no_value},
         {"remove existing key", test_remove_existing_key},
         {"remove missing key", test_remove_missing_key},
+        {"executor SET", test_executor_set_stores_value},
+        {"executor GET existing", test_executor_get_existing_key},
+        {"executor GET missing", test_executor_get_missing_key},
+        {"executor DELETE existing", test_executor_delete_existing_key},
+        {"executor DELETE missing", test_executor_delete_missing_key},
         {"parse valid commands", test_parse_valid_commands},
         {"reject invalid commands", test_parser_rejects_invalid_commands},
     };
