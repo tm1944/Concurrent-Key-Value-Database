@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
-#include "kv_store.h";
-#include "command.h";
+#include "kv_store.h"
+#include "command.h"
 
 
 class CommandExecutor {
@@ -13,4 +13,4 @@ public:
 
 private:
     KVStore& store_;
-}
+};

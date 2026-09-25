@@ -1,13 +1,16 @@
-#include <string.h>
-#include<vector>
+#pragma once
+
+#include <string>
+#include <vector>
 
 struct Command {
     enum class Type {
         GET,
         SET,
-        DELETE
+        DELETE,
+        EXIT
     };
 
     Type type;
     std::vector<std::string> args;
-}
+};
