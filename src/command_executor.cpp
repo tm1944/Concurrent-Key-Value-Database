@@ -20,18 +20,20 @@ std::string CommandExecutor::execute(const Command& cmd){
         store_.set(cmd.args[0], cmd.args[1]);
         res = "OK";
         break;
-
+    
     case Command::Type::DELETE:
         if(store_.remove(cmd.args[0])){
             res = "1";
         }else{
             res = "0";
         }
-
+        break;
+    
+    case Command::Type::EXIT:
         break;
 
     default:
-        break;
+        return "ERR";
     }
     return res;
 }
