@@ -1,7 +1,8 @@
 #include <iostream>
-
+#include "../include/tcp_server.h"
 
 int main(){
-    std::cout << "KV DB (REDIS) :-D" << std::endl;
+    TCPServer server(6379);
+    server.start();
     return 0;
 }
