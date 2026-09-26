@@ -40,7 +40,7 @@ void TCPServer::setup_socket(){
 }
 
 
-void TCPServer::handle_client(int client_fd){
+void TCPServer::serve_client(int client_fd){
     //receiving data
     std::string pending;
     char buffer[1024] = { 0 };
@@ -89,15 +89,15 @@ void TCPServer::start(){
         return;
     }
 
-    handle_client(clientSocket);
+    serve_client(clientSocket);
     close(clientSocket);
 }
 
 //return index of char in string
- int TCPServer::find_char(const std::string& s, char c){
-    for(auto it = 0; it < s.size();++it){
+int TCPServer::find_char(const std::string& s, char c){
+    for(std::size_t it = 0; it < s.size();++it){
         if(s[it] == c){
-            return it;
+            return static_cast<int>(it);
         }
     }
     return -1;

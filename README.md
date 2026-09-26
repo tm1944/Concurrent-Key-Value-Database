@@ -1,19 +1,58 @@
 # Redis KV database
 
-Redis KV database is a Redis-like key-value database written in C++17. It is
-being built around a custom TCP server and command parser, with support planned
-for `GET`, `SET`, `DELETE`, `EXPIRE`, and `TTL` commands.
+Redis KV database is a Redis-like key-value database written in C++17. The
+current server accepts a TCP connection on port `6379`, reads newline-delimited
+commands, and sends one newline-delimited response for each valid command.
 
-The current repository contains the in-memory key-value store and command
-parser. The broader design includes concurrent request handling through a
-thread pool, mutex-protected shared state, and RAII ownership for sockets and
-other system resources. Write-ahead logging will persist mutating operations,
-and startup recovery will rebuild state by replaying the log. Concurrent client
-benchmarks will measure throughput and request latency.
+The implemented commands are:
+
+- `SET <key> <value>` stores a value and returns `OK`.
+- `GET <key>` returns the value or `(nil)` when the key does not exist.
+- `DELETE <key>` removes a key and returns `1`, or returns `0` when the key does
+  not exist.
+- `EXIT` is accepted by the parser and returns an empty response line.
+
+The server currently handles one client per run. The in-memory store lasts for
+that connection. Concurrent clients, `EXPIRE`, `TTL`, write-ahead logging,
+crash recovery, and benchmarks are planned but are not implemented in this
+repository yet.
+
+## Run the server
+
+Build the project, then start the server:
+
+```sh
+./build/server
+```
+
+In another terminal, connect with Netcat:
+
+```sh
+nc 127.0.0.1 6379
+```
+
+Each command must end with a newline. For example:
+
+```text
+SET account active
+GET account
+DELETE account
+GET account
+```
+
+The server responds with:
+
+```text
+OK
+active
+1
+(nil)
+```
 
 ## Build and test
 
-You need a C++17 compiler and CMake 3.16 or newer.
+You need a C++17 compiler, CMake 3.16 or newer, and a POSIX system such as
+Linux, macOS, or WSL. The TCP server uses POSIX socket headers.
 
 ```sh
 cmake -S . -B build
@@ -36,9 +75,10 @@ With Visual Studio, the executable is usually under the selected configuration:
 
 ## Add a test
 
-Tests live in `tests/tests.cpp` and use a small dependency-free runner. Add a
-test function that throws through `require` when an expectation fails, then add
-the function to the `tests` list in `main`.
+Unit tests live in `tests/tests.cpp`. The TCP test lives in
+`tests/tcp_server_tests.cpp`. Both files use small dependency-free runners.
+Add a test function that throws through `require` when an expectation fails,
+then register it in the file's `main` function.
 
 ```cpp
 void test_example() {
