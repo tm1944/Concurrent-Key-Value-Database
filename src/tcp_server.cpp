@@ -1,9 +1,15 @@
 #include "../include/tcp_server.h"
+#include "../include/command_parser.h"
+#include "../include/command_executor.h"
+#include "../include/kv_store.h"
+#include "../include/command.h"
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <iostream>
+#include <algorithm>
 
 TCPServer::TCPServer(int port)
     : port_(port), server_fd_(-1){}
@@ -36,9 +42,40 @@ void TCPServer::setup_socket(){
 
 void TCPServer::handle_client(int client_fd){
     //receiving data
+    std::string pending;
     char buffer[1024] = { 0 };
-    recv(client_fd, buffer, sizeof(buffer),0);
-    send(client_fd, "PONG\n",5,0); //place holder for now for testing
+    KVStore kvStore;
+    CommandParser cmdParser;
+    CommandExecutor cmdExec(kvStore);
+    std::string res = "";
+
+    while(true){
+        int conn = recv(client_fd, buffer, sizeof(buffer),0);
+        if(conn == -1  || conn == 0){ // -1 -> error  0 == disconnect 
+            std::cout << "Connection Error: " <<  conn << std::endl;
+            return;
+        }
+        
+
+        pending.append(buffer,conn);
+        int pos = TCPServer::find_char(pending, '\n');
+        while(pos != -1){
+            std::string cmd = pending.substr(0,pos);
+            pending.erase(0,pos+1); //remove command from tcp message
+            auto parsed = cmdParser.parse(cmd);
+
+            if(!parsed.has_value()){
+                // invalid command so no struct
+                return;
+            }
+            Command cmdStruct = parsed.value();
+            res =  cmdExec.execute(cmdStruct);  //valid struct so execute it
+            res += "\n";
+            send(client_fd, res.data(), res.size() , 0); //send result from KV DB
+            
+            pos = TCPServer::find_char(pending,'\n'); //next command
+        }
+    }
 }
 
 void TCPServer::start(){
@@ -54,4 +91,14 @@ void TCPServer::start(){
 
     handle_client(clientSocket);
     close(clientSocket);
+}
+
+//return index of char in string
+ int TCPServer::find_char(const std::string& s, char c){
+    for(auto it = 0; it < s.size();++it){
+        if(s[it] == c){
+            return it;
+        }
+    }
+    return -1;
 }
