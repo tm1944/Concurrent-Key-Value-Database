@@ -1,6 +1,6 @@
 A concurrent key-value server in C++17, built with POSIX sockets, a custom
 thread pool, a synchronized in-memory store, and an append-only write-ahead log.
-KeyCore implements connection handling, command parsing, worker scheduling,
+The server implements connection handling, command parsing, worker scheduling,
 and mutation logging without external runtime libraries.
 
 The server accepts newline-delimited commands and returns one newline-delimited
