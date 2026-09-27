@@ -1,37 +1,62 @@
 # Redis KV database
 
-Redis KV database is a Redis-like key-value database written in C++17. The
-current server accepts a TCP connection on port `6379`, reads newline-delimited
-commands, and sends one newline-delimited response for each valid command.
+Redis KV database is an in-memory key-value server written in C++17. It listens
+on TCP port `6379` and uses a thread pool with four workers. All clients share
+one store, and a mutex protects concurrent access.
 
-The implemented commands are:
+The server accepts newline-delimited commands and returns one newline-delimited
+response for each valid command.
+
+## Supported commands
 
 - `SET <key> <value>` stores a value and returns `OK`.
-- `GET <key>` returns the value or `(nil)` when the key does not exist.
-- `DELETE <key>` removes a key and returns `1`, or returns `0` when the key does
-  not exist.
-- `EXIT` is accepted by the parser and returns an empty response line.
+- `GET <key>` returns the value. It returns `(nil)` if the key does not exist.
+- `DELETE <key>` removes a key. It returns `1` if the key existed and `0` if it
+  did not exist.
+- `EXIT` returns an empty response line. It does not close the connection.
 
-The server currently handles one client per run. The in-memory store lasts for
-that connection. Concurrent clients, `EXPIRE`, `TTL`, write-ahead logging,
-crash recovery, and benchmarks are planned but are not implemented in this
-repository yet.
+Keys and values cannot contain spaces. An invalid command closes the client
+connection.
+
+The database stores data in memory only. Restarting the server clears all keys.
+The project does not implement expiration, persistence, authentication, or the
+Redis wire protocol.
+
+## Requirements
+
+You need the following software:
+
+- A C++17 compiler
+- CMake 3.16 or newer
+- Linux, macOS, or WSL
+
+The TCP server and its integration tests use POSIX sockets, so they do not build
+natively on Windows.
+
+## Build the project
+
+Run these commands from the repository root:
+
+```sh
+cmake -S . -B build
+cmake --build build
+```
 
 ## Run the server
 
-Build the project, then start the server:
+Start the server after the build completes:
 
 ```sh
 ./build/server
 ```
 
-In another terminal, connect with Netcat:
+Open another terminal and connect with Netcat:
 
 ```sh
 nc 127.0.0.1 6379
 ```
 
-Each command must end with a newline. For example:
+Enter one command per line:
 
 ```text
 SET account active
@@ -49,36 +74,38 @@ active
 (nil)
 ```
 
-## Build and test
+Open more Netcat sessions to use the server from several clients at the same
+time. Each session accesses the same in-memory store.
 
-You need a C++17 compiler, CMake 3.16 or newer, and a POSIX system such as
-Linux, macOS, or WSL. The TCP server uses POSIX socket headers.
+## Run the tests
+
+Build and run all tests with CTest:
 
 ```sh
 cmake -S . -B build
-cmake --build build --config Debug
-ctest --test-dir build --build-config Debug --output-on-failure
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
-To run the test executable directly on a single-configuration generator such
-as Make or Ninja:
+The test suite covers command parsing, command execution, store operations,
+thread-pool shutdown, fragmented TCP messages, batched commands, and concurrent
+clients.
+
+Run either test executable directly when you need its full output:
 
 ```sh
 ./build/redis_kv_tests
-```
-
-With Visual Studio, the executable is usually under the selected configuration:
-
-```powershell
-.\build\Debug\redis_kv_tests.exe
+./build/tcp_server_tests
 ```
 
 ## Add a test
 
-Unit tests live in `tests/tests.cpp`. The TCP test lives in
-`tests/tcp_server_tests.cpp`. Both files use small dependency-free runners.
-Add a test function that throws through `require` when an expectation fails,
-then register it in the file's `main` function.
+Unit tests live in `tests/tests.cpp`. TCP integration tests live in
+`tests/tcp_server_tests.cpp`. Each file has a small test runner with no external
+test-framework dependency.
+
+Create a test function that calls `require` for each expected result. Register
+the function in the `tests` list in `main`:
 
 ```cpp
 void test_example() {

@@ -7,6 +7,7 @@ void KVStore::set(const std::string& key, const std::string& value){
 }
 
 std::optional<std::string> KVStore::get(const std::string& key){
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = store_.find(key);
     if(it != store_.end()){
         return it->second;
@@ -16,6 +17,7 @@ std::optional<std::string> KVStore::get(const std::string& key){
 
 
 bool KVStore::remove(const std::string& key){
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = store_.find(key);
     if(it != store_.end()){
         store_.erase(it);
