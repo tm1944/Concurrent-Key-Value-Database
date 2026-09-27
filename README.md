@@ -6,6 +6,14 @@ and mutation logging without external runtime libraries.
 The server accepts newline-delimited commands and returns one newline-delimited
 response for each valid command.
 
+## Performance snapshot
+
+Measured **13.3K GET operations/sec** with one client, with **66 µs p50** and
+**170 µs p99** round-trip latency. Results are medians of three runs of 50,000
+commands using a C++ Release build on localhost under WSL2. The WAL used a
+memory-backed filesystem. See [Benchmarks](#benchmarks) for all four workloads,
+machine details, and reproduction commands.
+
 ## Engineering overview
 
 ```mermaid
@@ -149,6 +157,58 @@ Run either test executable directly when you need its full output:
 ./build/tcp_server_tests
 ```
 
+## Benchmarks
+
+Measured on localhost in WSL2 with a Release build. Each row reports the
+median throughput, median p50, and median p99 from three runs of 50,000 total
+commands. Latency is round-trip time per command.
+
+| Workload | Clients | Ops/s | p50 (µs) | p99 (µs) |
+| --- | ---: | ---: | ---: | ---: |
+| GET | 1 | 13,311 | 66.0 | 169.7 |
+| SET | 1 | 13,029 | 68.4 | 168.2 |
+| GET | 4 | 10,533 | 356.0 | 951.9 |
+| SET | 4 | 10,755 | 348.7 | 936.6 |
+
+Environment: Intel Core i7-10870H, 8 cores and 16 logical CPUs exposed to WSL2;
+Linux 6.18.33.2-microsoft-standard-WSL2; GCC 15.2.0; Python 3.14.4.
+CMake Release used `-O3 -DNDEBUG` and C++17.
+WAL files were under `/tmp/kv-bench-*/redis.wal` on **tmpfs**, a memory-backed
+filesystem. These results do not measure physical disk performance.
+
+To reproduce from a Linux or WSL terminal:
+
+```sh
+cmake -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build cmake-build-release -j2
+python3 tools/bench.py --server cmake-build-release/server
+```
+
+The script starts and stops its own server. Port 6379 must be free.
+For a quick check, add `--ops 100 --repeats 1`.
+
+The benchmark uses only Python's standard library. Each client connects, sends
+1,000 warmup commands, waits for the other clients, then measures its commands.
+Each request waits for a complete response before the next request starts.
+Clients cycle through 100 prepopulated keys using a fixed value.
+The 50,000 measured commands are split equally among clients.
+
+Every response is checked. Throughput is successful commands divided by the
+time from the shared start to the last response. Latency uses a monotonic
+nanosecond clock; p50 and p99 use nearest-rank percentiles across all clients.
+Setup and warmup are excluded. Each run uses a fresh server and temporary WAL
+directory, which is removed afterward.
+
+Single-client GET was slightly faster than SET. Four-client SET was slightly
+faster than GET, and neither four-client scenario improved throughput over one
+client. These are end-to-end measurements that include Python thread scheduling,
+socket operations, parsing, and server work; they do not isolate the bottleneck
+or establish maximum server throughput.
+
+WAL flushing stays enabled, but stream flush is not `fsync`, and startup recovery
+is not implemented. These numbers are not a Redis comparison: the protocol and
+durability guarantees differ.
+
 ## Add a test
 
 Unit tests live in `tests/tests.cpp`. TCP integration tests live in
@@ -180,10 +240,9 @@ The current implementation has the following limits:
 - Socket error handling, partial sends, graceful shutdown, and write-failure
   reporting need further work.
 - The server binds to all IPv4 interfaces and has no authentication or TLS.
-- Expiration, bounded queues, connection timeouts, and performance benchmarks
-  are not implemented.
+- Expiration, bounded queues, and server-side connection timeouts are not implemented.
 
 The next persistence milestone is to serialize each log-and-store mutation,
 handle failed writes, and replay validated records at startup. End-to-end
-listener tests and measured throughput benchmarks would then extend the
-current component coverage.
+listener correctness tests and benchmarks on a disk-backed WAL would then extend
+the current coverage.

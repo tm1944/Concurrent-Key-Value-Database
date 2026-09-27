@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <iostream>
 #include <algorithm>
+#include <cerrno>
+#include <system_error>
 
 TCPServer::TCPServer(int port, const std::string& wal_path)
     : port_(port),
@@ -23,20 +25,37 @@ void TCPServer::setup_socket(){
     //creating the socket
     //ipv4, TCP stream 
     server_fd_= socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd_ == -1) {
+        throw std::system_error(errno, std::generic_category(), "socket");
+    }
+    const auto fail = [this](const char* operation) {
+        const int error = errno;
+        close(server_fd_);
+        server_fd_ = -1;
+        throw std::system_error(error, std::generic_category(), operation);
+    };
+    int reuse = 1;
+    if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
+        fail("setsockopt");
+    }
     
     //specify the address
-    sockaddr_in serverAddress; //struct that describes a IPV4
+    sockaddr_in serverAddress{}; //struct that describes a IPV4
     serverAddress.sin_family = AF_INET;
     //htons - > host to network short
     serverAddress.sin_port = htons(port_); //set the port to the constructor
     serverAddress.sin_addr.s_addr = INADDR_ANY; //accepts connections sent to any network interface
 
     //bind socket
-    bind(server_fd_, (struct sockaddr*)&serverAddress,
-        sizeof(serverAddress));
+    if (bind(server_fd_, (struct sockaddr*)&serverAddress,
+             sizeof(serverAddress)) == -1) {
+        fail("bind");
+    }
     
     //listen 
-    listen(server_fd_,5);
+    if (listen(server_fd_,5) == -1) {
+        fail("listen");
+    }
 
     
     std::cout << "Client Socket Setup Complete!" << std::endl;
