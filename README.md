@@ -1,14 +1,35 @@
-# Redis KV database
+# KeyCore
 
-An educational C++17 database server built with POSIX sockets, a custom thread
-pool, a synchronized key-value store, and an append-only write-ahead log.
-The project explores connection handling, shared-state concurrency, resource
-ownership, and the foundations of database durability.
+A concurrent key-value server in C++17, built with POSIX sockets, a custom
+thread pool, a synchronized in-memory store, and an append-only write-ahead log.
+KeyCore implements connection handling, command parsing, worker scheduling,
+and mutation logging without external runtime libraries.
 
 The server accepts newline-delimited commands and returns one newline-delimited
 response for each valid command.
 
 ## Engineering overview
+
+```mermaid
+flowchart TD
+    clients["TCP clients"] -->|"Connect on port 6379"| listener["TCPServer: accept loop"]
+    listener -->|"Enqueue connection task"| queue["ThreadPool: task queue"]
+    queue -->|"One connection per worker"| workers["4 worker threads"]
+    workers --> handler["serve_client: receive and buffer bytes"]
+    handler -->|"Complete newline-delimited command"| parser["CommandParser"]
+    parser -->|"Valid command"| executor["CommandExecutor"]
+    parser -->|"Invalid command"| close["Close client connection"]
+    executor -->|"SET / DELETE: append and flush first"| wal["WriteAheadLog + mutex"]
+    wal --> file[("redis.wal")]
+    executor -->|"SET / DELETE: then mutate"| store["Shared KVStore + mutex"]
+    executor -->|"GET: read"| store
+    store -->|"Value or mutation result"| executor
+    executor -->|"Response"| send["serve_client: send response + newline"]
+    send --> clients
+```
+
+The arrows show command flow. Logging and store mutations have separate locks;
+the diagram does not imply one atomic operation across both components.
 
 | Component | Responsibility |
 | --- | --- |
@@ -151,7 +172,7 @@ void test_example() {
 
 ## Current limits and next steps
 
-This is a systems programming project, not a production Redis replacement.
+The current implementation has the following limits:
 
 - The protocol is plain text and is not compatible with Redis RESP.
 - The WAL has no replay or recovery implementation. Stream flushes do not
