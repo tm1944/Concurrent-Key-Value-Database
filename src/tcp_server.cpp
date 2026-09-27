@@ -12,7 +12,10 @@
 #include <algorithm>
 
 TCPServer::TCPServer(int port)
-    : port_(port), server_fd_(-1), thread_pool_(4){}
+    : port_(port),
+      server_fd_(-1),
+      thread_pool_(4),
+      write_ahead_log_("redis.wal") {}
 
 
 void TCPServer::setup_socket(){
@@ -45,7 +48,7 @@ void TCPServer::serve_client(int client_fd){
     std::string pending;
     char buffer[1024] = { 0 };
     CommandParser cmdParser;
-    CommandExecutor cmdExec(kvStore_);
+    CommandExecutor cmdExec(kvStore_, write_ahead_log_);
     std::string res = "";
 
     while(true){
@@ -93,8 +96,6 @@ void TCPServer::start(){
             serve_client(clientSocket);
         });
     }
-    
-
     close(clientSocket);
 }
 

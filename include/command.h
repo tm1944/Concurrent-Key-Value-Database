@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include<vector>
+#include <vector>
 
 struct Command {
     enum class Type {

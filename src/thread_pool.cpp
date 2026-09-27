@@ -13,8 +13,8 @@ ThreadPool::ThreadPool(std::size_t num_thread){
 
 ThreadPool::~ThreadPool(){
     {
-    std::lock_guard<std::mutex> lock(mutex_);
-    stopping_ = true;
+        std::lock_guard<std::mutex> lock(mutex_);
+        stopping_ = true;
     }
     condition_.notify_all();
     for(auto& t : workers_){
@@ -45,7 +45,9 @@ void ThreadPool::worker_loop_(){
 
 
 void ThreadPool::enqueue(std::function<void()> task){
-    std::lock_guard<std::mutex> lock(mutex_);
-    tasks_.push(std::move(task));
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tasks_.push(std::move(task));
+    }
     condition_.notify_one();
 }

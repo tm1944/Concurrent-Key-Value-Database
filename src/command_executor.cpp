@@ -1,7 +1,7 @@
 #include "../include/command_executor.h"
 
-CommandExecutor::CommandExecutor(KVStore& store)
-    :store_(store) {}
+CommandExecutor::CommandExecutor(KVStore& store, WriteAheadLog& write_ahead_log)
+    :store_(store), write_ahead_log_(write_ahead_log){}
 
 std::string CommandExecutor::execute(const Command& cmd){
     std::string res;
@@ -17,11 +17,13 @@ std::string CommandExecutor::execute(const Command& cmd){
         break;
     }
     case Command::Type::SET:
+        write_ahead_log_.set_log(cmd.args[0],cmd.args[1]);
         store_.set(cmd.args[0], cmd.args[1]);
         res = "OK";
         break;
     
     case Command::Type::DELETE:
+        write_ahead_log_.delete_log(cmd.args[0]);
         if(store_.remove(cmd.args[0])){
             res = "1";
         }else{

@@ -24,8 +24,6 @@ private:
 
     std::mutex mutex_;
 
-    std::condition_variable  condition_;
-
-    bool stopping_ = false; //tells workers pool is shutting down
-
+    std::condition_variable condition_;
+    bool stopping_ = false; //tells workers thepool is shutting down
 };

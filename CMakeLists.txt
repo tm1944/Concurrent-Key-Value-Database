@@ -14,6 +14,7 @@ add_library(redis_kv_core
     src/kv_store.cpp
     src/tcp_server.cpp
     src/thread_pool.cpp
+    src/write_ahead_log.cpp
 )
 
 target_include_directories(redis_kv_core PUBLIC include)
