@@ -1,8 +1,12 @@
 #include "command_executor.h"
 #include "command_parser.h"
 #include "kv_store.h"
+#include "thread_pool.h"
 
+#include <atomic>
+#include <chrono>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -155,6 +159,33 @@ void test_parser_rejects_invalid_commands() {
             "EXIT with arguments should be rejected");
 }
 
+void test_thread_pool_executes_enqueued_task() {
+    ThreadPool pool(1);
+    std::promise<int> result;
+    auto completed = result.get_future();
+
+    pool.enqueue([&result] { result.set_value(42); });
+
+    require(completed.wait_for(std::chrono::seconds(1)) ==
+                std::future_status::ready,
+            "A worker should execute an enqueued task");
+    require(completed.get() == 42,
+            "The enqueued task should produce its expected result");
+}
+
+void test_thread_pool_destructor_finishes_queued_tasks() {
+    std::atomic<int> completed{0};
+    {
+        ThreadPool pool(2);
+        for (int i = 0; i < 20; ++i) {
+            pool.enqueue([&completed] { ++completed; });
+        }
+    }
+
+    require(completed.load() == 20,
+            "Destroying the pool should finish every queued task");
+}
+
 }  // namespace
 
 int main() {
@@ -171,6 +202,8 @@ int main() {
         {"executor DELETE missing", test_executor_delete_missing_key},
         {"parse valid commands", test_parse_valid_commands},
         {"reject invalid commands", test_parser_rejects_invalid_commands},
+        {"thread pool executes task", test_thread_pool_executes_enqueued_task},
+        {"thread pool drains tasks", test_thread_pool_destructor_finishes_queued_tasks},
     };
 
     int failures = 0;

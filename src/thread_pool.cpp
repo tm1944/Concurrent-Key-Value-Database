@@ -34,7 +34,7 @@ void ThreadPool::worker_loop_(){
             });
             
             if(stopping_ && tasks_.empty()){
-                ThreadPool::~ThreadPool();
+                return;
             }
             task = std::move(tasks_.front());
             tasks_.pop();
