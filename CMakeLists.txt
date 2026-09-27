@@ -39,6 +39,7 @@ if(BUILD_TESTING)
     target_link_libraries(redis_kv_tests PRIVATE redis_kv_core)
 
     add_test(NAME redis_kv_tests COMMAND redis_kv_tests)
+    set_tests_properties(redis_kv_tests PROPERTIES TIMEOUT 30)
 
     if(UNIX)
         add_executable(tcp_server_tests tests/tcp_server_tests.cpp)
@@ -48,5 +49,6 @@ if(BUILD_TESTING)
         )
 
         add_test(NAME tcp_server_tests COMMAND tcp_server_tests)
+        set_tests_properties(tcp_server_tests PROPERTIES TIMEOUT 30)
     endif()
 endif()

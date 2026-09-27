@@ -1,4 +1,5 @@
 #include "tcp_server.h"
+#include "temp_log.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -61,7 +62,8 @@ void test_server_processes_fragmented_and_batched_commands() {
     require(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0,
             "the test should create a connected socket pair");
 
-    TCPServer server(0);
+    TempLog file;
+    TCPServer server(0, file.path());
     std::thread server_thread([&server, server_socket = sockets[0]] {
         server.serve_client(server_socket);
     });
@@ -88,7 +90,8 @@ void test_server_handles_concurrent_clients() {
     constexpr int client_count = 8;
     constexpr int commands_per_client = 50;
 
-    TCPServer server(0);
+    TempLog file;
+    TCPServer server(0, file.path());
     std::vector<std::thread> server_threads;
     std::vector<std::thread> client_threads;
     std::vector<std::string> responses(client_count);
@@ -163,6 +166,49 @@ void test_server_handles_concurrent_clients() {
     }
 }
 
+std::string exchange(TCPServer& server, const std::string& commands) {
+    int sockets[2];
+    require(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0,
+            "Socket pair creation");
+    std::thread worker([&] { server.serve_client(sockets[0]); });
+    try {
+        send_all(sockets[1], commands);
+        shutdown(sockets[1], SHUT_WR);
+        const auto response = receive_until_closed(sockets[1]);
+        close(sockets[1]);
+        worker.join();
+        return response;
+    } catch (...) {
+        shutdown(sockets[1], SHUT_RDWR);
+        close(sockets[1]);
+        worker.join();
+        throw;
+    }
+}
+
+void test_shared_store_and_log() {
+    TempLog file;
+    TCPServer server(0, file.path());
+    require(exchange(server, "SET shared value\n") == "OK\n", "First client SET");
+    require(exchange(server, "GET shared\nDELETE shared\nGET shared\n") ==
+                "value\n1\n(nil)\n", "Later clients must share the same store");
+    require(file.read() == "SET shared value\nDELETE shared\n",
+            "Client mutations must reach the shared WAL");
+}
+
+void test_invalid_and_incomplete_commands() {
+    TempLog file;
+    TCPServer server(0, file.path());
+    require(exchange(server, "INVALID\n").empty(), "Invalid command closes client");
+    require(exchange(server, "SET incomplete value").empty(),
+            "Disconnect must discard a command without a newline");
+    require(exchange(server, "GET incomplete\n") == "(nil)\n",
+            "Incomplete command must not mutate the store");
+    require(file.read().empty(), "Rejected commands must not enter the WAL");
+    require(exchange(server, "EXIT\nGET missing\n") == "\n(nil)\n",
+            "EXIT currently returns an empty line and keeps serving");
+}
+
 }  // namespace
 
 int main() {
@@ -170,6 +216,8 @@ int main() {
         {"fragmented and batched TCP commands",
          test_server_processes_fragmented_and_batched_commands},
         {"concurrent TCP clients", test_server_handles_concurrent_clients},
+        {"shared store and WAL", test_shared_store_and_log},
+        {"invalid and incomplete commands", test_invalid_and_incomplete_commands},
     };
 
     int failures = 0;

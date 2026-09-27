@@ -2,6 +2,9 @@
 #include "command_parser.h"
 #include "kv_store.h"
 #include "thread_pool.h"
+#include "temp_log.h"
+#include <set>
+#include <sstream>
 
 #include <atomic>
 #include <chrono>
@@ -68,7 +71,9 @@ void test_remove_missing_key() {
 
 void test_executor_set_stores_value() {
     KVStore store;
-    CommandExecutor executor(store);
+    TempLog file;
+    WriteAheadLog log(file.path());
+    CommandExecutor executor(store, log);
     const Command command{Command::Type::SET, {"account", "active"}};
 
     const auto response = executor.execute(command);
@@ -81,7 +86,9 @@ void test_executor_set_stores_value() {
 void test_executor_get_existing_key() {
     KVStore store;
     store.set("account", "active");
-    CommandExecutor executor(store);
+    TempLog file;
+    WriteAheadLog log(file.path());
+    CommandExecutor executor(store, log);
     const Command command{Command::Type::GET, {"account"}};
 
     require(executor.execute(command) == "active",
@@ -90,7 +97,9 @@ void test_executor_get_existing_key() {
 
 void test_executor_get_missing_key() {
     KVStore store;
-    CommandExecutor executor(store);
+    TempLog file;
+    WriteAheadLog log(file.path());
+    CommandExecutor executor(store, log);
     const Command command{Command::Type::GET, {"missing"}};
 
     require(executor.execute(command) == "(nil)",
@@ -100,7 +109,9 @@ void test_executor_get_missing_key() {
 void test_executor_delete_existing_key() {
     KVStore store;
     store.set("temporary", "value");
-    CommandExecutor executor(store);
+    TempLog file;
+    WriteAheadLog log(file.path());
+    CommandExecutor executor(store, log);
     const Command command{Command::Type::DELETE, {"temporary"}};
 
     require(executor.execute(command) == "1",
@@ -111,7 +122,9 @@ void test_executor_delete_existing_key() {
 
 void test_executor_delete_missing_key() {
     KVStore store;
-    CommandExecutor executor(store);
+    TempLog file;
+    WriteAheadLog log(file.path());
+    CommandExecutor executor(store, log);
     const Command command{Command::Type::DELETE, {"missing"}};
 
     require(executor.execute(command) == "0",
@@ -160,9 +173,9 @@ void test_parser_rejects_invalid_commands() {
 }
 
 void test_thread_pool_executes_enqueued_task() {
-    ThreadPool pool(1);
     std::promise<int> result;
     auto completed = result.get_future();
+    ThreadPool pool(1);
 
     pool.enqueue([&result] { result.set_value(42); });
 
@@ -186,11 +199,94 @@ void test_thread_pool_destructor_finishes_queued_tasks() {
             "Destroying the pool should finish every queued task");
 }
 
+void test_wal_records_and_reopen() {
+    TempLog file;
+    {
+        WriteAheadLog log(file.path());
+        log.set_log("account", "active");
+        log.delete_log("account");
+        require(file.read() == "SET account active\nDELETE account\n",
+                "Records must be complete and visible after each write");
+    }
+    {
+        WriteAheadLog log(file.path());
+        log.set_log("next", "value");
+    }
+    require(file.read() == "SET account active\nDELETE account\nSET next value\n",
+            "Reopening must append without truncating existing records");
+}
+
+void test_wal_rejects_invalid_path() {
+    TempLog file;
+    bool threw = false;
+    try {
+        WriteAheadLog log(file.path() + "/missing/log");
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    require(threw, "Opening a log below a nonexistent directory must fail");
+}
+
+void test_executor_logs_only_mutations() {
+    TempLog file;
+    WriteAheadLog log(file.path());
+    KVStore store;
+    CommandExecutor executor(store, log);
+    require(executor.execute({Command::Type::SET, {"key", "first"}}) == "OK",
+            "SET response");
+    require(executor.execute({Command::Type::SET, {"key", "second"}}) == "OK",
+            "Overwrite response");
+    require(executor.execute({Command::Type::GET, {"key"}}) == "second",
+            "GET must see the overwrite");
+    require(executor.execute({Command::Type::DELETE, {"key"}}) == "1",
+            "DELETE response");
+    require(executor.execute({Command::Type::DELETE, {"key"}}) == "0",
+            "Missing DELETE response");
+    require(executor.execute({Command::Type::EXIT, {}}).empty(), "EXIT response");
+    require(file.read() == "SET key first\nSET key second\nDELETE key\nDELETE key\n",
+            "Only mutation commands must be logged, in execution order");
+}
+
+void test_concurrent_wal_records() {
+    TempLog file;
+    WriteAheadLog log(file.path());
+    {
+        ThreadPool pool(4);
+        for (int i = 0; i < 200; ++i) {
+            pool.enqueue([&log, i] { log.set_log(std::to_string(i), "value"); });
+        }
+    }
+    std::istringstream input(file.read());
+    std::multiset<std::string> actual;
+    for (std::string line; std::getline(input, line);) actual.insert(line);
+    std::multiset<std::string> expected;
+    for (int i = 0; i < 200; ++i)
+        expected.insert("SET " + std::to_string(i) + " value");
+    require(actual == expected, "Every concurrent record must occur exactly once");
+}
+
+void test_parser_whitespace_and_case() {
+    CommandParser parser;
+    const auto command = parser.parse(" \tSET\tkey value\r");
+    require(command && command->type == Command::Type::SET &&
+                command->args == std::vector<std::string>{"key", "value"},
+            "Whitespace should separate tokens");
+    for (const auto* invalid : {"set key value", "GET key extra",
+                               "SET key value extra", "DELETE", " \t"}) {
+        require(!parser.parse(invalid), "Invalid syntax must be rejected");
+    }
+}
+
 }  // namespace
 
 int main() {
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
         {"set and get", test_set_and_get},
+        {"WAL records and reopen", test_wal_records_and_reopen},
+        {"WAL invalid path", test_wal_rejects_invalid_path},
+        {"executor WAL integration", test_executor_logs_only_mutations},
+        {"concurrent WAL records", test_concurrent_wal_records},
+        {"parser whitespace and case", test_parser_whitespace_and_case},
         {"set overwrites", test_set_overwrites_existing_value},
         {"missing key", test_missing_key_returns_no_value},
         {"remove existing key", test_remove_existing_key},

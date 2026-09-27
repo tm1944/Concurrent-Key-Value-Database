@@ -11,11 +11,11 @@
 #include <iostream>
 #include <algorithm>
 
-TCPServer::TCPServer(int port)
+TCPServer::TCPServer(int port, const std::string& wal_path)
     : port_(port),
       server_fd_(-1),
-      thread_pool_(4),
-      write_ahead_log_("redis.wal") {}
+      write_ahead_log_(wal_path),
+      thread_pool_(4) {}
 
 
 void TCPServer::setup_socket(){
