@@ -4,7 +4,6 @@
 #include <string>
 #include <optional>
 
-
 class KVStore {
 public:
     //automatically generated for now
