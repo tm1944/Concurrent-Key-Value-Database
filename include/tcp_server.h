@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../include/thread_pool.h"
+#include "../include/kv_store.h"
 #include <string>
 
 class TCPServer {
@@ -11,6 +13,9 @@ public:
 private:
     int port_;
     int server_fd_;
+
+    KVStore kvStore_;
+    ThreadPool thread_pool_;
 
     void setup_socket();
     int find_char(const std::string& s, char c);

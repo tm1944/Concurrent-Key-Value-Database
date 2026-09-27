@@ -12,7 +12,7 @@
 #include <algorithm>
 
 TCPServer::TCPServer(int port)
-    : port_(port), server_fd_(-1){}
+    : port_(port), server_fd_(-1), thread_pool_(4){}
 
 
 void TCPServer::setup_socket(){
@@ -44,15 +44,15 @@ void TCPServer::serve_client(int client_fd){
     //receiving data
     std::string pending;
     char buffer[1024] = { 0 };
-    KVStore kvStore;
     CommandParser cmdParser;
-    CommandExecutor cmdExec(kvStore);
+    CommandExecutor cmdExec(kvStore_);
     std::string res = "";
 
     while(true){
         int conn = recv(client_fd, buffer, sizeof(buffer),0);
         if(conn == -1  || conn == 0){ // -1 -> error  0 == disconnect 
             std::cout << "Connection Error: " <<  conn << std::endl;
+            close(client_fd);
             return;
         }
         
@@ -66,6 +66,7 @@ void TCPServer::serve_client(int client_fd){
 
             if(!parsed.has_value()){
                 // invalid command so no struct
+                close(client_fd);
                 return;
             }
             Command cmdStruct = parsed.value();
@@ -80,16 +81,20 @@ void TCPServer::serve_client(int client_fd){
 
 void TCPServer::start(){
     TCPServer::setup_socket();
-
-    //accept connection request
-    int clientSocket 
-        = accept(server_fd_, nullptr,nullptr);
-
-    if (clientSocket == -1){
-        return;
+    int clientSocket{};
+    while (true){
+        //accept connection request
+        clientSocket 
+            = accept(server_fd_, nullptr,nullptr);
+        if (clientSocket == -1){
+            return;
+        }
+        thread_pool_.enqueue([this,clientSocket]{
+            serve_client(clientSocket);
+        });
     }
+    
 
-    serve_client(clientSocket);
     close(clientSocket);
 }
 

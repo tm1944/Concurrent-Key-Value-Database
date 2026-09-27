@@ -1,7 +1,8 @@
 #include "../include/kv_store.h"
-
+#include <mutex>
 
 void KVStore::set(const std::string& key, const std::string& value){
+    std::lock_guard<std::mutex> lock(mutex_);
     store_[key] = value;
 }
 

@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <string>
 #include <optional>
+#include <mutex>
 
 class KVStore {
 public:
@@ -16,4 +17,5 @@ public:
 
 private:
     std::unordered_map<std::string, std::string> store_;
+    std::mutex mutex_;
 };
